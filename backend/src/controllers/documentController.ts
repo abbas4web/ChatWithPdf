@@ -1,6 +1,11 @@
 import { Request, Response } from 'express';
 import pool from '../db/pool';
 import { extractPdfText } from '../lib/extractPdf';
+import { chunkText } from '../lib/chunkText';
+
+const CHUNK_SIZE = 500;  // characters per chunk
+const OVERLAP    = 100;  // overlapping characters between consecutive chunks
+const PREVIEW_COUNT = 3; // how many sample chunks to include in the response
 
 export const uploadDocument = async (req: Request, res: Response): Promise<void> => {
   if (!req.file) {
@@ -17,12 +22,15 @@ export const uploadDocument = async (req: Request, res: Response): Promise<void>
   );
   const doc = result.rows[0];
 
-  // 2. Extract text from the saved PDF (held in memory, not persisted)
+  // 2. Extract full text from the saved PDF
   const extracted = await extractPdfText(filePath);
+
+  // 3. Split into overlapping fixed-size chunks (held in memory, not persisted yet)
+  const chunks = chunkText(extracted.fullText, { chunkSize: CHUNK_SIZE, overlap: OVERLAP });
 
   res.status(201).json({
     status: 'ok',
-    message: 'PDF uploaded and text extracted successfully',
+    message: 'PDF uploaded, text extracted, and chunked successfully',
     document: {
       id: doc.id,
       filename: doc.filename,
@@ -31,7 +39,18 @@ export const uploadDocument = async (req: Request, res: Response): Promise<void>
     extraction: {
       total_pages: extracted.totalPages,
       total_chars: extracted.totalChars,
-      pages_preview: extracted.pagesPreviews,
+    },
+    chunking: {
+      chunk_size: CHUNK_SIZE,
+      overlap: OVERLAP,
+      total_chunks: chunks.length,
+      // Return first PREVIEW_COUNT chunks for inspection
+      sample_chunks: chunks.slice(0, PREVIEW_COUNT).map(c => ({
+        index: c.index,
+        char_start: c.charStart,
+        char_end: c.charEnd,
+        text: c.text,
+      })),
     },
   });
 };
