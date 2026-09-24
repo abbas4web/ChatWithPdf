@@ -7,9 +7,11 @@
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "migrate": "ts-node --transpile-only src/db/migrate.ts"
+    "migrate": "ts-node --transpile-only src/db/migrate.ts",
+    "embed": "ts-node --transpile-only src/db/embedChunks.ts"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.3.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",

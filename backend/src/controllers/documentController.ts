@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import pool from '../db/pool';
 import { extractPdfText } from '../lib/extractPdf';
 import { chunkText } from '../lib/chunkText';
+import { embedText } from '../lib/embedText';
 
 const CHUNK_SIZE    = 500; // characters per chunk
 const OVERLAP       = 100; // overlapping characters between consecutive chunks
@@ -15,7 +16,6 @@ export const uploadDocument = async (req: Request, res: Response): Promise<void>
 
   const { originalname, path: filePath } = req.file;
 
-  // Use a single transaction so documents + chunks are always consistent
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -33,12 +33,15 @@ export const uploadDocument = async (req: Request, res: Response): Promise<void>
     // 3. Split into overlapping chunks
     const chunks = chunkText(extracted.fullText, { chunkSize: CHUNK_SIZE, overlap: OVERLAP });
 
-    // 4. Bulk-insert all chunks belonging to this document
+    // 4. Generate embedding for each chunk and insert with embedding
     for (const chunk of chunks) {
+      const embedding = await embedText(chunk.text);
+      const vectorLiteral = `[${embedding.join(',')}]`;
+
       await client.query(
-        `INSERT INTO document_chunks (document_id, chunk_index, content)
-         VALUES ($1, $2, $3)`,
-        [doc.id, chunk.index, chunk.text]
+        `INSERT INTO document_chunks (document_id, chunk_index, content, embedding)
+         VALUES ($1, $2, $3, $4)`,
+        [doc.id, chunk.index, chunk.text, vectorLiteral]
       );
     }
 
@@ -46,7 +49,7 @@ export const uploadDocument = async (req: Request, res: Response): Promise<void>
 
     res.status(201).json({
       status: 'ok',
-      message: 'PDF uploaded, extracted, chunked, and saved successfully',
+      message: 'PDF uploaded, extracted, chunked, embedded, and saved successfully',
       document: {
         id: doc.id,
         filename: doc.filename,
